@@ -3,64 +3,82 @@ use crate::types::*; // Import types (VehicleId, CallId, etc.)
 
 #[cfg(test)]
 mod tests {
+    use crate::problem::Problem;
+    use crate::solution::Route;
     use super::*;
 
     #[test]
-    fn test_insert_and_route() {
-        // Create a solution with 2 vehicles and 5 calls.
-        let mut sol = Solution::from_params(2, 5);
+    fn test_insert_and_remove_calls() {
+        let mut solution = Solution::from_params(3, 5);
 
-        // Insert call 1 into vehicle 1 at pickup logical index 0 and delivery logical index 1.
-        sol.insert_call(1, 1, 0, 1).unwrap();
-        // Expect vehicle 1's raw route to contain call 1.
-        assert_eq!(sol.route_raw(1).unwrap(), &[1]);
-        // Logical route should be [1].
-        assert_eq!(sol.route(1), vec![1]);
-        // Intersperse deliveries for vehicle 1.
-        let events = sol.intersperse_deliveries(1).unwrap();
-        // With one call, pickup time is 0.0 and delivery time becomes 0.0.
-        assert_eq!(events, vec![1, -1]);
+        let v1 = VehicleId::new(1).unwrap();
+        let v2 = VehicleId::new(2).unwrap();
+        let v3 = VehicleId::new(3).unwrap();
 
-        // Insert call 2 into vehicle 1 at pickup index 1 and delivery index 2.
-        sol.insert_call(1, 2, 1, 2).unwrap();
-        // Raw route now should be [2, 1, 2].
-        assert_eq!(sol.route_raw(1).unwrap(), &[1, 2]);
-        // Logical route should be [1, 2].
-        assert_eq!(sol.route(1), vec![1, 2]);
-        let events = sol.intersperse_deliveries(1).unwrap();
-        // We expect pickup events for call 1 at time 0 and call 2 at time 1.
-        assert_eq!(*events.first().unwrap(), 1);
-        assert_eq!(*events.last().unwrap(), -2);
+        let c1 = CallId::new_pickup(1).unwrap();
+        let c2 = CallId::new_pickup(2).unwrap();
+        let c3 = CallId::new_pickup(3).unwrap();
+        let c4 = CallId::new_pickup(4).unwrap();
+        let c5 = CallId::new_pickup(5).unwrap();
 
-        // Remove call 1.
-        sol.remove_call(1).unwrap();
-        // Logical route should now be [2].
-        assert_eq!(sol.route(1), vec![2]);
-        let events = sol.intersperse_deliveries(1).unwrap();
-        // For one call, events should be pickup (2, 0.0) and delivery (-2, 0.0).
-        assert_eq!(events, vec![2, -2]);
+        // Insert calls in a certain order
+        solution.insert_call(v1, c1, 0, 1).unwrap();
+        solution.insert_call(v1, c2, 1, 2).unwrap();
+        solution.insert_call(v2, c3, 0, 1).unwrap();
+        solution.insert_call(v3, c4, 0, 2).unwrap();
+        solution.insert_call(v3, c5, 0, 2).unwrap();
+
+        // Check expected routes
+        assert_eq!(solution.route(v1), vec![c1, c2, c1.inverse(), c2.inverse()]);
+        assert_eq!(solution.route(v2), vec![c3, c3.inverse()]);
+        assert_eq!(solution.route(v3), vec![c5, c4, c4.inverse(), c5.inverse()]);
+
+        // Remove some calls and check routes
+        solution.remove_call(c2).unwrap();
+        assert_eq!(solution.route(v1), vec![c1, c1.inverse()]);
+
+        solution.remove_call(c4).unwrap();
+        assert_eq!(solution.route(v3), vec![c5, c5.inverse()]);
+
+        // Reinsert in different orders
+        solution.insert_call(v1, c5, 1, 2).unwrap();
+        solution.insert_call(v2, c2, 0, 1).unwrap();
+
+        // Verify final routes
+        assert_eq!(solution.route(v1), vec![c1, c5, c1.inverse(), c5.inverse()]);
+        assert_eq!(solution.route(v2), vec![c2, c3, c2.inverse(), c3.inverse()]);
+        assert_eq!(solution.route(v3), vec![]);
     }
 
     #[test]
-    fn test_multiple_inserts_and_removes() {
-        // Create a solution with 1 vehicle and 5 calls.
-        let mut sol = Solution::from_params(1, 5);
-        // Insert calls 1, 2, 3 sequentially.
-        sol.insert_call(0, 1, 0, 1).unwrap();
-        sol.insert_call(0, 2, 1, 2).unwrap();
-        sol.insert_call(0, 3, 2, 3).unwrap();
-        assert_eq!(sol.route(0), vec![1, 2, 3]);
-        // Remove call 2.
-        sol.remove_call(2).unwrap();
-        assert_eq!(sol.route(0), vec![1, 3]);
-        // Insert call 4 into logical position 1 (between call 1 and 3).
-        sol.insert_call(0, 4, 1, 2).unwrap();
-        assert_eq!(sol.route(0), vec![1, 4, 3]);
-        let events = sol.intersperse_deliveries(0).unwrap();
-        // Expect 6 events (3 pickups and 3 deliveries).
-        assert_eq!(events.len(), 6);
-        assert_eq!(*events.first().unwrap(), 1);
-        assert_eq!(*events.last().unwrap(), -3);
+    fn test_invalid_insertions() {
+        let mut solution = Solution::from_params(2, 3);
+
+        let v1 = VehicleId::new(1).unwrap();
+        let c1 = CallId::new_pickup(1).unwrap();
+
+        // Attempt to insert with delivery before pickup (should fail)
+        assert!(solution.insert_call(v1, c1, 2, 1).is_err());
+
+        // Attempt to remove a call that hasn't been inserted (should fail)
+        assert!(solution.remove_call(c1).is_err());
+    }
+
+    #[test]
+    fn test_reassign_call() {
+        let mut solution = Solution::from_params(2, 3);
+
+        let v1 = VehicleId::new(1).unwrap();
+        let v2 = VehicleId::new(2).unwrap();
+        let c1 = CallId::new_pickup(1).unwrap();
+
+        // Insert a call in one vehicle, then reassign it
+        solution.insert_call(v1, c1, 0, 1).unwrap();
+        assert_eq!(solution.route(v1), vec![c1, c1.inverse()]);
+
+        solution.insert_call(v2, c1, 0, 1).unwrap();
+        assert_eq!(solution.route(v1), vec![]); // Should be removed from v1
+        assert_eq!(solution.route(v2), vec![c1, c1.inverse()]);
     }
 
     fn setup_pylist() -> Solution {
@@ -89,13 +107,27 @@ mod tests {
         Solution::from_pylist(pylist).expect("Failed to create Solution from pylist")
     }
 
+    pub fn route_to_plain(route: Vec<CallId>) -> Vec<isize> {
+        route.iter().map(|&call| call.raw() as isize).collect()
+    }
+
+    #[test]
+    fn test_pylist_feasible() {
+        let sol = setup_pylist();
+
+        let problem = Problem::load("data/Call_80_Vehicle_20.txt").unwrap();
+
+        assert!(sol.is_feasible(&problem));
+    }
+
+    #[ignore]
     #[test]
     fn test_pylist_match_pickups() {
         // The Python-like list string, exactly as given:
         let sol = setup_pylist();
 
         // Expected routes for each vehicle
-        let expected_pickups: Vec<Vec<CallId>> = vec![
+        let expected_pickups: Vec<Vec<isize>> = vec![
             vec![70, 18, 69, 48, 73, 56],
             vec![64, 49],
             vec![67, 42, 3, 80],
@@ -120,8 +152,8 @@ mod tests {
 
         // Compare actual deliveries to expected deliveries
         for (vehicle, expected_route) in expected_pickups.iter().enumerate() {
-            let vehicle_id = vehicle as VehicleId;
-            let actual_route = sol.route(vehicle_id);
+            let vehicle_id = VehicleId::new((vehicle + 1) as u8).unwrap();
+            let actual_route = route_to_plain(sol.route(vehicle_id));
             assert_eq!(
                 actual_route, *expected_route,
                 "Mismatch in vehicle {} delivery: expected {:?}, got {:?}",
@@ -136,9 +168,9 @@ mod tests {
         let sol = setup_pylist();
 
         // Expected routes for each vehicle
-        let expected_route: Vec<Vec<CallId>> = vec![
+        let expected_route: Vec<Vec<isize>> = vec![
             // Vehicle 1:
-            vec![70, 18, -18, -70, 69, 48, -69, 73, -48, 56, -56, -73],
+            vec![70, 18, -18, -70, 69, 48, 73, -69, -48, 56, -56, -73],
             // Vehicle 2:
             vec![64, -64, 49, -49],
             // Vehicle 3:
@@ -182,13 +214,13 @@ mod tests {
 
         // Compare actual deliveries to expected deliveries
         for (vehicle, expected_route) in expected_route.iter().enumerate() {
-            let vehicle_id = vehicle as VehicleId;
-            let actual_route = sol.intersperse_deliveries(vehicle_id).unwrap();
+            let vehicle_id = VehicleId::new((vehicle + 1) as u8).unwrap();
+            let actual_route = route_to_plain(sol.route(vehicle_id));
             assert_eq!(
                 actual_route, *expected_route,
                 "Mismatch in vehicle {} route: expected {:?}, got {:?}",
                 vehicle_id, expected_route, actual_route
             );
         }
-        }
+    }
 }

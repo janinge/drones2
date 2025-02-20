@@ -1,10 +1,11 @@
-use std::cmp::{max, Ordering};
-use std::collections::{HashMap};
+use std::collections::HashSet;
+
 use crate::problem::Problem;
+use crate::solution::Route;
 use crate::types::*;
 
 #[derive(Debug)]
-pub enum SolutionError {
+pub(crate) enum SolutionError {
     InvalidPickupIndex(String),
     InvalidDeliveryIndex(String),
     CallNotFound(String),
@@ -12,48 +13,22 @@ pub enum SolutionError {
     InvalidInput(String),
 }
 
-#[derive(Clone, Debug, PartialEq)] // Note: Not deriving Eq because f32 does not implement Eq.
-pub struct Solution {
-    routes: Vec<Vec<CallId>>,
-    routes_len: Vec<usize>,
-    assignments: Vec<VehicleId>,
-    deliveries: Vec<f32>,
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct Solution {
+    routes: Vec<Route>,
+    assignments: Vec<Option<VehicleId>>,
 }
 
 impl Solution {
-    fn logical_idx_to_real(route: &[CallId], logical_index: usize) -> Option<usize> {
-        let mut count = 0;
-        for (i, &val) in route.iter().enumerate() {
-            if val != 0 {
-                if count == logical_index {
-                    return Some(i);
-                }
-                count += 1;
-            } else {
-                if count == logical_index {
-                    return Some(i);
-                }
-            }
-        }
-        if count == logical_index {
-            Some(route.len())
-        } else {
-            None
-        }
+    pub(crate) fn new(problem: &Problem) -> Self {
+        Self::from_params(problem.n_vehicles.get() as usize, problem.n_calls.id() as usize)
     }
 
-    pub fn new(problem: &Problem) -> Self {
-        Self::from_params(problem.n_vehicles as usize, problem.n_calls as usize)
-    }
+    pub(crate) fn from_params(n_vehicles: usize, n_calls: usize) -> Self {
+        let routes = vec![Route::new(); n_vehicles];
+        let assignments = vec![None; n_calls];
 
-    pub fn from_params(n_vehicles: usize, n_calls: usize) -> Self {
-        let routes = vec![Vec::with_capacity(n_calls >> 1); n_vehicles];
-        let routes_len = vec![0; n_vehicles];
-
-        let assignments = vec![0; n_calls];
-        let deliveries = vec![0.0; n_calls];
-
-        Self { routes, routes_len, assignments, deliveries }
+        Self { routes, assignments }
     }
 
     /// Creates a new solution from a Python-like list string.
@@ -64,9 +39,9 @@ impl Solution {
     /// - A 0 signals a new vehicle.
     pub fn from_pylist(pylist: &str) -> Result<Solution, SolutionError> {
         let trimmed = pylist.trim().trim_start_matches('[').trim_end_matches(']');
-        let parsed: Result<Vec<CallId>, _> = trimmed
+        let parsed: Result<Vec<i32>, _> = trimmed
             .split(',')
-            .map(|s| s.trim().parse::<CallId>())
+            .map(|s| s.trim().parse::<i32>())
             .collect();
 
         let numbers = parsed.map_err(|_| SolutionError::InvalidInput("Failed to parse integers".to_string()))?;
@@ -76,7 +51,15 @@ impl Solution {
         }
 
         // Split the vector into vehicle blocks using 0 as a separator.
-        let mut vehicle_blocks: Vec<&[CallId]> = numbers.split(|&x| x == 0).collect();
+        let mut vehicle_blocks: Vec<Vec<CallId>> = numbers
+            .split(|&x| x == 0)
+            .map(|block| {
+                block.iter()
+                    .filter_map(|&x| CallId::new_pickup(x.try_into().unwrap()))
+                    .collect::<Vec<CallId>>()
+            })
+            .collect();
+
         // Remove any empty block at the end.
         if let Some(last) = vehicle_blocks.last() {
             if last.is_empty() {
@@ -95,49 +78,48 @@ impl Solution {
         }
         let n_calls = max_call as usize;
 
-        let mut routes: Vec<Vec<CallId>> = Vec::with_capacity(n_vehicles);
-        let mut routes_len: Vec<usize> = vec![0; n_vehicles];
-        let mut assignments: Vec<VehicleId> = vec![0; n_calls];
-        let mut deliveries: Vec<f32> = vec![0.0; n_calls];
+        let mut routes = Vec::with_capacity(n_vehicles);
+        let mut assignments: Vec<Option<VehicleId>> = vec![None; n_calls];
 
         // Process each vehicle block.
         // For each block, use a set to track the first occurrence (pickup) of each call.
         for (veh_index, block) in vehicle_blocks.iter().enumerate() {
-            let mut seen: HashMap<CallId, f32> = HashMap::new();
-            let mut route: Vec<CallId> = Vec::new();
-            let block_len = block.len() as f32;
+            let mut seen: HashSet<CallId> = HashSet::with_capacity(block.len());
+            let mut route = Route::with_capacity(block.len());
 
-            for (call_idx, &call) in (*block).iter().enumerate() {
-                let call = call.abs();
+            for &call in (*block).iter() {
+                let call = call.pickup();
 
-                if !seen.contains_key(&call) {
-                    seen.insert(call, call_idx as f32);
+                if !seen.contains(&call) {
+                    seen.insert(call);
                     route.push(call);
                 } else {
-                    // If the call is already in the route, this is the delivery event.
-                    let pickup_idx = *seen.get(&call).unwrap();
-                    let delivery_position = (f32::MAX / (block_len - pickup_idx)) * (call_idx as f32 - pickup_idx);
-                    deliveries[(call - 1) as usize] = delivery_position;
+                    route.push(call.delivery());
                 }
             }
-
-            // Save the route and its length.
-            routes_len[veh_index] = route.len();
 
             routes.push(route);
 
             // For each call in the route, record that it is assigned to this vehicle (vehicles are 1-indexed).
-            for call_id in &routes[veh_index] {
-                let call_idx = (call_id - 1) as usize;
-                assignments[call_idx] = veh_index as VehicleId;
+            for call_id in routes[veh_index].route() {
+                if call_id.is_delivery() {
+                    continue;
+                }
+
+                assignments[call_id.index()] = Some(
+                    VehicleId::new(
+                        (veh_index + 1)
+                            .try_into()
+                            .map_err(|_| SolutionError::VehicleOutOfBounds("Too many vehicles".to_string()))?
+                    )
+                        .ok_or(SolutionError::InvalidInput("Vehicle index must be nonzero".to_string()))?
+                );
             }
         }
 
         Ok(Solution {
             routes,
-            routes_len,
             assignments,
-            deliveries,
         })
     }
 
@@ -157,151 +139,81 @@ impl Solution {
             )));
         }
 
-        let call_index = (call - 1) as usize;
         // If already assigned, remove from its current vehicle.
-        if self.assignments[call_index] != 0 {
+        if matches!(self.assignments[call.index()], Some(_)) {
             self.remove_call(call)?;
         }
 
-        // Get mutable reference to the route for the target vehicle.
         let route = self
             .routes
-            .get_mut(vehicle as usize)
+            .get_mut(vehicle.get() as usize - 1)
             .ok_or_else(|| SolutionError::VehicleOutOfBounds(format!("Vehicle {} not found", vehicle)))?;
 
-        let real_index = Self::logical_idx_to_real(route, pickup_idx)
-            .ok_or_else(|| SolutionError::InvalidPickupIndex(format!("Invalid pickup index {}", pickup_idx)))?;
+        route.insert(call, pickup_idx, delivery_idx);
 
-        // Now perform the insertion:
-        if real_index < route.len() {
-            let prev_index = max(real_index - 1, 0);
-
-            if route[prev_index] == 0 {
-                // Slot before index empty: simply fill this.
-                route[prev_index] = call;
-            } else {
-                // Slot is occupied: shift elements to the right.
-                route.insert(real_index, call);
-            }
-        } else {
-            // Append the call at the end.
-            route.push(call);
-        }
-
-        // Update the route's length.
-        self.routes_len[vehicle as usize] += 1;
-
-        // Record the assignment.
-        self.assignments[call_index] = vehicle;
-
-        let route_len = self.routes_len[vehicle as usize] as f32;
-        let delivery_position = f32::MAX / (route_len - (pickup_idx as f32)) * (delivery_idx as f32 - pickup_idx as f32);
-
-        self.deliveries[call_index] = delivery_position;
+        self.assignments[call.index()] = Some(vehicle);
 
         Ok(())
     }
 
     /// Removes a call from the specified vehicle’s route.
-    pub fn remove_call(
-        &mut self,
-        call: CallId,
-    ) -> Result<(), SolutionError> {
-        let vehicle = self.assignments[call as usize - 1];
+    pub fn remove_call(&mut self, call: CallId) -> Result<(), SolutionError> {
+        let vehicle_ref = &mut self.assignments[call.index()];
+
+        let vehicle = vehicle_ref.ok_or_else(||
+            SolutionError::CallNotFound(format!("Call {} is not assigned a vehicle", call.raw())))?;
 
         let route = self
             .routes
-            .get_mut(vehicle as usize)
+            .get_mut(vehicle.get() as usize - 1)
             .ok_or_else(|| SolutionError::VehicleOutOfBounds(format!("Vehicle {} not found", vehicle)))?;
 
-        let index = route.iter().position(|&x| x == call)
-            .ok_or_else(|| SolutionError::CallNotFound(format!("Call {} not found in vehicle {}", call, vehicle)))?;
-
-        // Replace the value at this index with 0.
-        route[index] = 0;
-
-        self.routes_len[vehicle as usize] -= 1;
+        route.remove(call);
 
         // Reset the assignment.
-        self.assignments[(call - 1) as usize] = 0;
+        *vehicle_ref = None;
         Ok(())
     }
 
-    fn update_route_length(&mut self, vehicle: VehicleId) {
-        self.routes_len[vehicle as usize] = self.routes[vehicle as usize]
-            .iter().filter(|&&val| val != 0).count()
-    }
-
-    /// Returns an immutable view of the raw route for a given vehicle.
-    pub fn route_raw(&self, vehicle: VehicleId) -> Option<&[CallId]> {
-        self.routes.get(vehicle as usize).map(|r| r.as_slice())
-    }
-
     pub fn route(&self, vehicle: VehicleId) -> Vec<CallId> {
-        if vehicle as usize >= self.routes.len() {
+        if vehicle.get() as usize > self.routes.len() {
             return Vec::new();
         }
 
-        let counter = self.routes_len[vehicle as usize];
-        let routes = self.routes[vehicle as usize].as_slice();
-
-        if counter == routes.len() {
-            Vec::from(routes)
-        } else {
-            routes.iter().filter(|&&val| val != 0).copied().collect()
-        }
-    }
-
-    /// Returns a Vec of events where deliveries have been interspersed with pickups.
-    pub fn intersperse_deliveries(&self, vehicle: VehicleId) -> Option<Vec<CallId>> {
-        let pickups = self.route(vehicle);
-        let route_len = pickups.len();
-        if route_len == 0 {
-            return Some(Vec::new());
-        }
-
-        let mut events: Vec<(CallId, f32)> = Vec::with_capacity(route_len * 2);
-
-        for (i, &call) in pickups.iter().enumerate() {
-            let pickup_time = i as f32;
-            events.push((call, pickup_time));
-            let call_index = (call - 1) as usize;
-            let delivery_raw = self.deliveries[call_index];
-            // Scale the delivery value (which is in the range [0, f32::MAX]) into the range [i, count - 1].
-            // This is done by: new_delivery = i + (delivery_raw / f32::MAX) * ((count - 1) - i)
-            let new_delivery = i as f32 + (delivery_raw / f32::MAX) * (route_len as f32 - i as f32);
-            // For deliveries, we store the call id as negative.
-            events.push((-call, new_delivery));
-        }
-
-        // Sort events by time; if times are equal, sort by call id in descending order
-        // so that pickups (positive) come before deliveries (negative).
-        events.sort_by(|a, b| {
-            let time_cmp = a.1.partial_cmp(&b.1).unwrap_or(Ordering::Equal);
-            if time_cmp == Ordering::Equal {
-                b.0.cmp(&a.0)
-            } else {
-                time_cmp
-            }
-        });
-
-        println!("{:?}", events);
-        Some(events.into_iter().map(|(call_id, _)| call_id).collect())
+        self.routes[vehicle.get() as usize - 1].route()
     }
 
     /// Checks whether the specified call is unassigned.
     pub fn is_unassigned(&self, call: CallId) -> bool {
-        let call_index = (call - 1) as usize;
-        self.assignments[call_index] == 0
+        self.assignments[call.index()] == None
     }
 
     /// Provides an iterator over the assignments vector.
-    pub fn assignments(&self) -> impl Iterator<Item = &VehicleId> {
+    pub fn assignments(&self) -> impl Iterator<Item = &Option<VehicleId>> {
         self.assignments.iter()
     }
 
-    pub fn is_feasible(&self, _problem: &Problem) -> bool {
-        unimplemented!("Feasibility checking not implemented yet.")
+    /// Checks whether the solution is feasible with respect to the given problem.
+    ///
+    /// For each vehicle’s route, we simulate the schedule:
+    /// - The vehicle starts at its home node with its starting time.
+    /// - For each call:
+    ///   - Check that the vehicle is allowed to serve this call.
+    ///   - The vehicle’s load is updated (increased for pickups, decreased for deliveries)
+    ///     and compared against its capacity.
+    ///   - The time window for the call is respected.
+    ///   - The appropriate service (loading/unloading) time is added.
+    ///   - If there is a next call, the travel time from the current node to the next call’s node is added.
+    pub fn is_feasible(&self, problem: &Problem) -> bool {
+        for (i, route) in self.routes.iter().enumerate() {
+            let vehicle_id = VehicleId::new((i + 1) as u8)
+                .expect("VehicleId must be nonzero");
+            let sim = route.simulate(problem, vehicle_id);
+            if !sim.is_feasible {
+                return false;
+            }
+        }
+        true
     }
 
     pub fn cost(&self, _problem: &Problem) -> u32 {
