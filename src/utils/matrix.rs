@@ -1,5 +1,5 @@
-use std::hash::{Hash, Hasher};
 use bytemuck::Pod;
+use std::hash::{Hash, Hasher};
 
 #[derive(Debug, Clone)]
 pub struct Matrix2<T> {
@@ -27,9 +27,10 @@ impl<T: Clone> Matrix2<T> {
 // Implement PartialEq, Eq and Hash using a byte-wise comparison.
 impl<T: Pod> PartialEq for Matrix2<T> {
     fn eq(&self, other: &Self) -> bool {
-        self.rows == other.rows &&
-            self.cols == other.cols &&
-            bytemuck::cast_slice::<T, u8>(&self.data) == bytemuck::cast_slice::<T, u8>(&other.data)
+        self.rows == other.rows
+            && self.cols == other.cols
+            && bytemuck::cast_slice::<T, u8>(&self.data)
+                == bytemuck::cast_slice::<T, u8>(&other.data)
     }
 }
 

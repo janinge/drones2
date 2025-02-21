@@ -1,13 +1,13 @@
+use std::iter::Map;
+use std::slice::Iter;
 use crate::solution::Route;
 use crate::types::CallId;
 
 pub enum CompactIter<'a> {
     Compact {
         // We only need an immutable borrow here because the calls are all Some.
-        compact_iter: std::iter::Map<
-            std::slice::Iter<'a, Option<CallId>>,
-            fn(&Option<CallId>) -> CallId,
-        >,
+        compact_iter:
+            Map<Iter<'a, Option<CallId>>, fn(&Option<CallId>) -> CallId>,
     },
     NonCompact {
         route: &'a mut Route,
@@ -24,7 +24,10 @@ impl<'a> CompactIter<'a> {
         if route.calls.iter().all(|x| x.is_some()) {
             // In compact mode, we only need an immutable borrow.
             // It’s safe to temporarily borrow the calls field.
-            let iter = route.calls.iter().map(unwrap_call as fn(&Option<CallId>) -> CallId);
+            let iter = route
+                .calls
+                .iter()
+                .map(unwrap_call as fn(&Option<CallId>) -> CallId);
             CompactIter::Compact { compact_iter: iter }
         } else {
             CompactIter::NonCompact {

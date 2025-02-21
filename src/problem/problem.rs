@@ -1,9 +1,9 @@
+use crate::problem::index::ProblemIndex;
+use crate::types::*;
+use crate::utils::*;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::ops::RangeInclusive;
-
-use crate::utils::*;
-use crate::types::*;
 
 #[derive(Debug)]
 pub struct Vehicle {
@@ -64,10 +64,12 @@ pub struct Problem {
     pub unloading_time: Matrix2<Time>,
     /// For each vehicle and call, the port cost (origin cost + destination cost).
     pub port_cost: Matrix2<Cost>,
+    /// Precomputed data structures.
+    pub index: ProblemIndex,
 }
 
 impl Problem {
-    /// Loads the problem from a CSV file.
+    /// Loads a problem from a CSV file.
     pub fn load(filename: &str) -> Result<Self, String> {
         let file = File::open(filename).map_err(|e| format!("File not found: {}", e))?;
         let reader = BufReader::new(file);
@@ -77,7 +79,12 @@ impl Problem {
             .filter(|line| {
                 if let Ok(ref s) = line {
                     let trimmed = s.trim();
-                    !trimmed.is_empty() && trimmed.chars().next().map(|c| c.is_digit(10)).unwrap_or(false)
+                    !trimmed.is_empty()
+                        && trimmed
+                            .chars()
+                            .next()
+                            .map(|c| c.is_digit(10))
+                            .unwrap_or(false)
                 } else {
                     true
                 }
@@ -85,12 +92,16 @@ impl Problem {
 
         // Read number of nodes
         let num_nodes_line = lines.next().ok_or("Expected number of nodes")??;
-        let num_nodes: usize = num_nodes_line.trim().parse()
+        let num_nodes: usize = num_nodes_line
+            .trim()
+            .parse()
             .map_err(|e| format!("Could not parse num_nodes: {}", e))?;
 
         // Read number of vehicles
         let num_vehicles_line = lines.next().ok_or("Expected number of vehicles")??;
-        let num_vehicles: usize = num_vehicles_line.trim().parse()
+        let num_vehicles: usize = num_vehicles_line
+            .trim()
+            .parse()
             .map_err(|e| format!("Could not parse num_vehicles: {}", e))?;
 
         // Read vehicle data
@@ -102,11 +113,17 @@ impl Problem {
                 return Err("Vehicle info line has insufficient parts".into());
             }
             // parts: [vehicle_index, home_node, starting_time, capacity]
-            let home_node_raw: u8 = parts[1].trim().parse()
+            let home_node_raw: u8 = parts[1]
+                .trim()
+                .parse()
                 .map_err(|e| format!("Bad home node: {}", e))?;
-            let starting_time_raw: u16 = parts[2].trim().parse()
+            let starting_time_raw: u16 = parts[2]
+                .trim()
+                .parse()
                 .map_err(|e| format!("Bad starting time: {}", e))?;
-            let capacity_raw: u32 = parts[3].trim().parse()
+            let capacity_raw: u32 = parts[3]
+                .trim()
+                .parse()
                 .map_err(|e| format!("Bad capacity: {}", e))?;
             vehicles.push(Vehicle {
                 home_node: home_node_raw.checked_sub(1).ok_or("Home node underflow")? as NodeId,
@@ -117,7 +134,9 @@ impl Problem {
 
         // Read number of calls
         let num_calls_line = lines.next().ok_or("Expected number of calls")??;
-        let num_calls: usize = num_calls_line.trim().parse()
+        let num_calls: usize = num_calls_line
+            .trim()
+            .parse()
             .map_err(|e| format!("Could not parse num_calls: {}", e))?;
 
         // Read vessel cargo (allowed calls)
@@ -127,9 +146,12 @@ impl Problem {
             let parts: Vec<&str> = line.split(',').collect();
             // The first part should be the vehicle index.
             for part in parts.iter().skip(1) {
-                let call_index: usize = part.trim().parse()
+                let call_index: usize = part
+                    .trim()
+                    .parse()
                     .map_err(|e| format!("Bad call index in vessel cargo: {}", e))?;
-                let idx = call_index.checked_sub(1)
+                let idx = call_index
+                    .checked_sub(1)
                     .ok_or("Call index underflow in vessel cargo")?;
                 *vessel_cargo.get_mut(i, idx) = true;
             }
@@ -144,17 +166,43 @@ impl Problem {
                 return Err("Call info line has insufficient parts".into());
             }
             // parts: [call_index, origin, destination, size, cost, pickup_lb, pickup_ub, delivery_lb, delivery_ub]
-            let origin_raw: u8 = parts[1].trim().parse().map_err(|e| format!("Bad origin: {}", e))?;
-            let destination_raw: u8 = parts[2].trim().parse().map_err(|e| format!("Bad destination: {}", e))?;
-            let size_raw: u16 = parts[3].trim().parse().map_err(|e| format!("Bad size: {}", e))?;
-            let not_transport_cost_raw: u32 = parts[4].trim().parse().map_err(|e| format!("Bad cost: {}", e))?;
-            let pickup_lb_raw: u16 = parts[5].trim().parse().map_err(|e| format!("Bad pickup lb: {}", e))?;
-            let pickup_ub_raw: u16 = parts[6].trim().parse().map_err(|e| format!("Bad pickup ub: {}", e))?;
-            let delivery_lb_raw: u16 = parts[7].trim().parse().map_err(|e| format!("Bad delivery lb: {}", e))?;
-            let delivery_ub_raw: u16 = parts[8].trim().parse().map_err(|e| format!("Bad delivery ub: {}", e))?;
+            let origin_raw: u8 = parts[1]
+                .trim()
+                .parse()
+                .map_err(|e| format!("Bad origin: {}", e))?;
+            let destination_raw: u8 = parts[2]
+                .trim()
+                .parse()
+                .map_err(|e| format!("Bad destination: {}", e))?;
+            let size_raw: u16 = parts[3]
+                .trim()
+                .parse()
+                .map_err(|e| format!("Bad size: {}", e))?;
+            let not_transport_cost_raw: u32 = parts[4]
+                .trim()
+                .parse()
+                .map_err(|e| format!("Bad cost: {}", e))?;
+            let pickup_lb_raw: u16 = parts[5]
+                .trim()
+                .parse()
+                .map_err(|e| format!("Bad pickup lb: {}", e))?;
+            let pickup_ub_raw: u16 = parts[6]
+                .trim()
+                .parse()
+                .map_err(|e| format!("Bad pickup ub: {}", e))?;
+            let delivery_lb_raw: u16 = parts[7]
+                .trim()
+                .parse()
+                .map_err(|e| format!("Bad delivery lb: {}", e))?;
+            let delivery_ub_raw: u16 = parts[8]
+                .trim()
+                .parse()
+                .map_err(|e| format!("Bad delivery ub: {}", e))?;
             calls.push(CallParameters {
                 origin: origin_raw.checked_sub(1).ok_or("Origin underflow")? as NodeId,
-                destination: destination_raw.checked_sub(1).ok_or("Destination underflow")? as NodeId,
+                destination: destination_raw
+                    .checked_sub(1)
+                    .ok_or("Destination underflow")? as NodeId,
                 size: size_raw as CargoSize,
                 not_transport_cost: not_transport_cost_raw as Cost,
                 pickup_window: (pickup_lb_raw as Time)..=(pickup_ub_raw as Time),
@@ -173,14 +221,35 @@ impl Problem {
                 return Err("Travel time/cost line has insufficient parts".into());
             }
             // parts: [vehicle, origin, destination, travel_time, travel_cost]
-            let vehicle_raw: usize = parts[0].trim().parse().map_err(|e| format!("Bad vehicle index in travel: {}", e))?;
-            let origin_raw: usize = parts[1].trim().parse().map_err(|e| format!("Bad origin in travel: {}", e))?;
-            let destination_raw: usize = parts[2].trim().parse().map_err(|e| format!("Bad destination in travel: {}", e))?;
-            let time: Time = parts[3].trim().parse().map_err(|e| format!("Bad travel time: {}", e))?;
-            let cost: Cost = parts[4].trim().parse().map_err(|e| format!("Bad travel cost: {}", e))?;
-            let v = vehicle_raw.checked_sub(1).ok_or("Vehicle index underflow in travel data")?;
-            let o = origin_raw.checked_sub(1).ok_or("Origin index underflow in travel data")?;
-            let d = destination_raw.checked_sub(1).ok_or("Destination index underflow in travel data")?;
+            let vehicle_raw: usize = parts[0]
+                .trim()
+                .parse()
+                .map_err(|e| format!("Bad vehicle index in travel: {}", e))?;
+            let origin_raw: usize = parts[1]
+                .trim()
+                .parse()
+                .map_err(|e| format!("Bad origin in travel: {}", e))?;
+            let destination_raw: usize = parts[2]
+                .trim()
+                .parse()
+                .map_err(|e| format!("Bad destination in travel: {}", e))?;
+            let time: Time = parts[3]
+                .trim()
+                .parse()
+                .map_err(|e| format!("Bad travel time: {}", e))?;
+            let cost: Cost = parts[4]
+                .trim()
+                .parse()
+                .map_err(|e| format!("Bad travel cost: {}", e))?;
+            let v = vehicle_raw
+                .checked_sub(1)
+                .ok_or("Vehicle index underflow in travel data")?;
+            let o = origin_raw
+                .checked_sub(1)
+                .ok_or("Origin index underflow in travel data")?;
+            let d = destination_raw
+                .checked_sub(1)
+                .ok_or("Destination index underflow in travel data")?;
             *travel_time.get_mut(v, o, d) = time;
             *travel_cost.get_mut(v, o, d) = cost;
         }
@@ -197,25 +266,54 @@ impl Problem {
                 return Err("Node times/costs line has insufficient parts".into());
             }
             // parts: [vehicle, call, load_time, origin_cost, unload_time, destination_cost]
-            let vehicle_raw: usize = parts[0].trim().parse().map_err(|e| format!("Bad vehicle index in node info: {}", e))?;
-            let call_raw: usize = parts[1].trim().parse().map_err(|e| format!("Bad call index in node info: {}", e))?;
-            let load: Time = parts[2].trim().parse().map_err(|e| format!("Bad load time: {}", e))?;
-            let origin_cost: Cost = parts[3].trim().parse().map_err(|e| format!("Bad origin cost: {}", e))?;
-            let unload: Time = parts[4].trim().parse().map_err(|e| format!("Bad unload time: {}", e))?;
-            let destination_cost: Cost = parts[5].trim().parse().map_err(|e| format!("Bad destination cost: {}", e))?;
-            let v = vehicle_raw.checked_sub(1).ok_or("Vehicle index underflow in node info")?;
-            let c = call_raw.checked_sub(1).ok_or("Call index underflow in node info")?;
+            let vehicle_raw: usize = parts[0]
+                .trim()
+                .parse()
+                .map_err(|e| format!("Bad vehicle index in node info: {}", e))?;
+            let call_raw: usize = parts[1]
+                .trim()
+                .parse()
+                .map_err(|e| format!("Bad call index in node info: {}", e))?;
+            let load: Time = parts[2]
+                .trim()
+                .parse()
+                .map_err(|e| format!("Bad load time: {}", e))?;
+            let origin_cost: Cost = parts[3]
+                .trim()
+                .parse()
+                .map_err(|e| format!("Bad origin cost: {}", e))?;
+            let unload: Time = parts[4]
+                .trim()
+                .parse()
+                .map_err(|e| format!("Bad unload time: {}", e))?;
+            let destination_cost: Cost = parts[5]
+                .trim()
+                .parse()
+                .map_err(|e| format!("Bad destination cost: {}", e))?;
+            let v = vehicle_raw
+                .checked_sub(1)
+                .ok_or("Vehicle index underflow in node info")?;
+            let c = call_raw
+                .checked_sub(1)
+                .ok_or("Call index underflow in node info")?;
             *loading_time.get_mut(v, c) = load;
             *unloading_time.get_mut(v, c) = unload;
             *port_cost.get_mut(v, c) = origin_cost + destination_cost;
         }
 
-        Ok(Problem {
-            n_nodes: num_nodes.try_into().map_err(|e|
-                format!("Too many nodes: {}", e))?,
-            n_vehicles: num_vehicles.try_into().ok().and_then(VehicleId::new)
+        let mut problem = Problem {
+            n_nodes: num_nodes
+                .try_into()
+                .map_err(|e| format!("Too many nodes: {}", e))?,
+            n_vehicles: num_vehicles
+                .try_into()
+                .ok()
+                .and_then(VehicleId::new)
                 .ok_or("Too few/many vehicles")?,
-            n_calls: num_calls.try_into().ok().and_then(CallId::new_pickup)
+            n_calls: num_calls
+                .try_into()
+                .ok()
+                .and_then(CallId::new_pickup)
                 .ok_or("Too few/many calls")?,
             vehicles,
             calls,
@@ -225,12 +323,19 @@ impl Problem {
             loading_time,
             unloading_time,
             port_cost,
-        })
+            index: ProblemIndex::default(),
+        };
+
+        problem.index = ProblemIndex::new(&problem);
+
+        Ok(problem)
     }
 
     /// Returns the travel time for a given vehicle and node pair.
     pub fn get_travel_time(&self, vehicle: VehicleId, origin: NodeId, destination: NodeId) -> Time {
-        *self.travel_time.get(vehicle.get() as usize - 1, origin as usize, destination as usize)
+        *self
+            .travel_time
+            .get(vehicle.index(), origin as usize, destination as usize)
     }
 
     /// Returns the travel time for a given vehicle and two calls.
@@ -258,7 +363,9 @@ impl Problem {
 
     /// Returns the travel cost for a given vehicle and node pair.
     pub fn get_travel_cost(&self, vehicle: VehicleId, origin: NodeId, destination: NodeId) -> Cost {
-        *self.travel_cost.get(vehicle.get() as usize - 1, origin as usize, destination as usize)
+        *self
+            .travel_cost
+            .get(vehicle.index(), origin as usize, destination as usize)
     }
 
     /// Returns the travel cost for a given vehicle and two calls.
@@ -286,13 +393,13 @@ impl Problem {
 
     /// Computes “first travel time” on the fly (from vehicle’s home node plus starting time).
     pub fn get_first_travel_time(&self, vehicle: VehicleId, destination: NodeId) -> Time {
-        let veh = &self.vehicles[vehicle.get() as usize - 1];
+        let veh = &self.vehicles[vehicle.index()];
         self.get_travel_time(vehicle, veh.home_node, destination) + veh.starting_time
     }
 
     /// Computes “first travel cost” on the fly.
     pub fn get_first_travel_cost(&self, vehicle: VehicleId, destination: NodeId) -> Cost {
-        let veh = &self.vehicles[vehicle.get() as usize - 1];
+        let veh = &self.vehicles[vehicle.index()];
         self.get_travel_cost(vehicle, veh.home_node, destination)
     }
 
@@ -311,6 +418,11 @@ impl Problem {
                 *self.calls[call.index()].delivery_window.end(),
             )
         }
+    }
+
+    /// Returns a slice of vehicle IDs that are compatible with the given call
+    pub fn get_compatible_vehicles(&self, call: CallId) -> &[VehicleId] {
+        &self.index.cargo_vessel[call.index()]
     }
 
     /// Returns the origin node for the given call.
@@ -339,14 +451,12 @@ impl Problem {
 
     /// Returns the pickup time window for the given call.
     #[inline(always)]
-    #[deprecated]
     pub fn pickup_time_window(&self, call: CallId) -> RangeInclusive<Time> {
         self.calls[call.index()].pickup_window.clone()
     }
 
     /// Returns the delivery time window for the given call.
     #[inline(always)]
-    #[deprecated]
     pub fn delivery_time_window(&self, call: CallId) -> RangeInclusive<Time> {
         self.calls[call.index()].delivery_window.clone()
     }
@@ -361,11 +471,15 @@ impl Problem {
         }
     }
 
+    pub fn get_vehicle(&self, vehicle: VehicleId) -> &Vehicle {
+        &self.vehicles[vehicle.index()]
+    }
+
     /// Returns the service time for a call on the specified vehicle.
     /// For pickups, this is the loading time; for deliveries, the unloading time.
     #[inline(always)]
     pub fn service_time(&self, vehicle: VehicleId, call: CallId) -> Time {
-        let veh_idx = (vehicle.get() as usize) - 1;
+        let veh_idx = vehicle.index();
         let call_idx = call.index();
         if call.is_pickup() {
             *self.loading_time.get(veh_idx, call_idx)
@@ -377,17 +491,13 @@ impl Problem {
     /// Returns the port cost (origin + destination cost) for the given call on the specified vehicle.
     #[inline(always)]
     pub fn port_cost_for_call(&self, vehicle: VehicleId, call: CallId) -> Cost {
-        let veh_idx = (vehicle.get() as usize) - 1;
-        let call_idx = call.index();
-        *self.port_cost.get(veh_idx, call_idx)
+        *self.port_cost.get(vehicle.index(), call.index())
     }
 
     /// Checks if a given call is allowed for the specified vehicle.
     #[inline(always)]
     pub fn is_call_allowed(&self, vehicle: VehicleId, call: CallId) -> bool {
-        let veh_idx = (vehicle.get() as usize) - 1;
-        let call_idx = call.index();
-        *self.vessel_cargo.get(veh_idx, call_idx)
+        *self.vessel_cargo.get(vehicle.index(), call.index())
     }
 
     /// Computes the waiting time before service for a call,
@@ -408,7 +518,12 @@ impl Problem {
     /// - For a pickup call, use the origin node.
     /// - For a delivery call, use the destination node.
     #[inline(always)]
-    pub fn travel_time_between_calls(&self, vehicle: VehicleId, origin: CallId, destination: CallId) -> Time {
+    pub fn travel_time_between_calls(
+        &self,
+        vehicle: VehicleId,
+        origin: CallId,
+        destination: CallId,
+    ) -> Time {
         let origin_node = if origin.is_pickup() {
             self.origin_node(origin)
         } else {
@@ -425,7 +540,12 @@ impl Problem {
     /// Returns the travel cost between two calls for the given vehicle,
     /// similar to travel_time_between_calls.
     #[inline(always)]
-    pub fn travel_cost_between_calls(&self, vehicle: VehicleId, origin: CallId, destination: CallId) -> Cost {
+    pub fn travel_cost_between_calls(
+        &self,
+        vehicle: VehicleId,
+        origin: CallId,
+        destination: CallId,
+    ) -> Cost {
         let origin_node = if origin.is_pickup() {
             self.origin_node(origin)
         } else {

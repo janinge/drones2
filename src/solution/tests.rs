@@ -2,10 +2,9 @@ use super::solution::*; // Import everything from solution.rs
 use crate::types::*; // Import types (VehicleId, CallId, etc.)
 
 #[cfg(test)]
-mod tests {
-    use crate::problem::Problem;
-    use crate::solution::Route;
+mod solution_tests {
     use super::*;
+    use crate::problem::Problem;
 
     #[test]
     fn test_insert_and_remove_calls() {
@@ -113,11 +112,20 @@ mod tests {
 
     #[test]
     fn test_pylist_feasible() {
-        let sol = setup_pylist();
+        let mut sol = setup_pylist();
 
         let problem = Problem::load("data/Call_80_Vehicle_20.txt").unwrap();
 
-        assert!(sol.is_feasible(&problem));
+        assert!(sol.feasible(&problem).is_ok(), "Solution is not feasible");
+    }
+
+    #[test]
+    fn test_pylist_cost() {
+        let mut sol = setup_pylist();
+
+        let problem = Problem::load("data/Call_80_Vehicle_20.txt").unwrap();
+
+        assert_eq!(sol.cost(&problem), 10705457);
     }
 
     #[ignore]
@@ -156,7 +164,7 @@ mod tests {
             let actual_route = route_to_plain(sol.route(vehicle_id));
             assert_eq!(
                 actual_route, *expected_route,
-                "Mismatch in vehicle {} delivery: expected {:?}, got {:?}",
+                "Mismatch in vehicle {:?} delivery: expected {:?}, got {:?}",
                 vehicle_id, expected_route, actual_route
             );
         }
@@ -176,7 +184,9 @@ mod tests {
             // Vehicle 3:
             vec![67, 42, -67, 3, -3, -42, 80, -80],
             // Vehicle 4:
-            vec![15, -15, 11, -11, 61, 74, -61, 46, -74, 36, 50, -46, 14, -36, -50, -14],
+            vec![
+                15, -15, 11, -11, 61, 74, -61, 46, -74, 36, 50, -46, 14, -36, -50, -14,
+            ],
             // Vehicle 5:
             vec![71, -71, 12, 72, -72, -12],
             // Vehicle 6:
@@ -186,7 +196,9 @@ mod tests {
             // Vehicle 8:
             vec![39, -39, 55, -55, 10, -10],
             // Vehicle 9:
-            vec![53, 41, 23, -41, -23, -53, 62, 35, -62, 45, -45, 65, -65, -35, 7, -7],
+            vec![
+                53, 41, 23, -41, -23, -53, 62, 35, -62, 45, -45, 65, -65, -35, 7, -7,
+            ],
             // Vehicle 10:
             vec![54, 63, -54, -63],
             // Vehicle 11:
@@ -211,14 +223,13 @@ mod tests {
             vec![60, 40, -60, -40, 13, 79, -13, 75, -79, -75],
         ];
 
-
         // Compare actual deliveries to expected deliveries
         for (vehicle, expected_route) in expected_route.iter().enumerate() {
             let vehicle_id = VehicleId::new((vehicle + 1) as u8).unwrap();
             let actual_route = route_to_plain(sol.route(vehicle_id));
             assert_eq!(
                 actual_route, *expected_route,
-                "Mismatch in vehicle {} route: expected {:?}, got {:?}",
+                "Mismatch in vehicle {:?} route: expected {:?}, got {:?}",
                 vehicle_id, expected_route, actual_route
             );
         }

@@ -1,8 +1,10 @@
-use std::collections::HashSet;
-
 use crate::problem::Problem;
+use crate::solution::feasibility::FeasibleInsertions;
+use crate::solution::route::CapacityResult;
 use crate::solution::Route;
 use crate::types::*;
+use std::collections::{HashMap, HashSet};
+use std::ops::Range;
 
 #[derive(Debug)]
 pub(crate) enum SolutionError {
@@ -17,18 +19,34 @@ pub(crate) enum SolutionError {
 pub(crate) struct Solution {
     routes: Vec<Route>,
     assignments: Vec<Option<VehicleId>>,
+    costs: Vec<CallCost>
+}
+
+#[derive(Default, Clone, Debug, PartialEq)]
+pub(super) struct CallCost {
+    pub(super) total: Cost,
+    pub(super) pickup: Cost,
+    pub(super) delivery: Cost,
 }
 
 impl Solution {
     pub(crate) fn new(problem: &Problem) -> Self {
-        Self::from_params(problem.n_vehicles.get() as usize, problem.n_calls.id() as usize)
+        Self::from_params(
+            problem.n_vehicles.get() as usize,
+            problem.n_calls.id() as usize,
+        )
     }
 
+    /// Creates a new solution with the given number of vehicles and calls.
     pub(crate) fn from_params(n_vehicles: usize, n_calls: usize) -> Self {
         let routes = vec![Route::new(); n_vehicles];
         let assignments = vec![None; n_calls];
 
-        Self { routes, assignments }
+        Self {
+            routes,
+            assignments,
+            costs: vec![CallCost::default(); n_calls],
+        }
     }
 
     /// Creates a new solution from a Python-like list string.
@@ -44,17 +62,21 @@ impl Solution {
             .map(|s| s.trim().parse::<i32>())
             .collect();
 
-        let numbers = parsed.map_err(|_| SolutionError::InvalidInput("Failed to parse integers".to_string()))?;
+        let numbers = parsed
+            .map_err(|_| SolutionError::InvalidInput("Failed to parse integers".to_string()))?;
 
         if numbers.is_empty() {
-            return Err(SolutionError::InvalidInput("Input list is empty".to_string()));
+            return Err(SolutionError::InvalidInput(
+                "Input list is empty".to_string(),
+            ));
         }
 
         // Split the vector into vehicle blocks using 0 as a separator.
         let mut vehicle_blocks: Vec<Vec<CallId>> = numbers
             .split(|&x| x == 0)
             .map(|block| {
-                block.iter()
+                block
+                    .iter()
                     .filter_map(|&x| CallId::new_pickup(x.try_into().unwrap()))
                     .collect::<Vec<CallId>>()
             })
@@ -68,13 +90,22 @@ impl Solution {
         }
         let n_vehicles = vehicle_blocks.len();
         if n_vehicles == 0 {
-            return Err(SolutionError::InvalidInput("No vehicles found in input".to_string()));
+            return Err(SolutionError::InvalidInput(
+                "No vehicles found in input".to_string(),
+            ));
         }
 
         // Determine total number of calls by taking the maximum absolute call value
-        let max_call = numbers.iter().filter(|&&x| x != 0).map(|&x| x.abs()).max().unwrap_or(0);
+        let max_call = numbers
+            .iter()
+            .filter(|&&x| x != 0)
+            .map(|&x| x.abs())
+            .max()
+            .unwrap_or(0);
         if max_call == 0 {
-            return Err(SolutionError::InvalidInput("No valid calls found".to_string()));
+            return Err(SolutionError::InvalidInput(
+                "No valid calls found".to_string(),
+            ));
         }
         let n_calls = max_call as usize;
 
@@ -107,12 +138,12 @@ impl Solution {
                 }
 
                 assignments[call_id.index()] = Some(
-                    VehicleId::new(
-                        (veh_index + 1)
-                            .try_into()
-                            .map_err(|_| SolutionError::VehicleOutOfBounds("Too many vehicles".to_string()))?
-                    )
-                        .ok_or(SolutionError::InvalidInput("Vehicle index must be nonzero".to_string()))?
+                    VehicleId::new((veh_index + 1).try_into().map_err(|_| {
+                        SolutionError::VehicleOutOfBounds("Too many vehicles".to_string())
+                    })?)
+                    .ok_or(SolutionError::InvalidInput(
+                        "Vehicle index must be nonzero".to_string(),
+                    ))?,
                 );
             }
         }
@@ -120,9 +151,100 @@ impl Solution {
         Ok(Solution {
             routes,
             assignments,
+            costs: vec![CallCost::default(); n_calls],
         })
     }
 
+    /// Returns a Python-like list string.
+    ///
+    /// In the input string:
+    /// - Nonzero integers represent call IDs.
+    /// - Each call appears twice: the first occurrence is its pickup, the second its delivery.
+    /// - A 0 signals a new vehicle.
+    pub fn to_pylist(&self, pos_deliveries: bool) -> String {
+        let mut flattened = Vec::new();
+
+        // For each route, add the calls and a 0 as a separator.
+        for route in &self.routes {
+            let calls = route.route();
+            if pos_deliveries {
+                flattened.extend(calls.iter().map(|&call| call.id()));
+            } else {
+                flattened.extend(calls.iter().map(|&call| call.raw()));
+            }
+            flattened.push(0); // Separator between vehicles
+        }
+
+        // For dummy calls, iterate over the assignments vector.
+        // If an assignment is None, that call is in the dummy vehicle.
+        let mut dummy_calls = Vec::new();
+        for (i, assignment) in self.assignments.iter().enumerate() {
+            if assignment.is_none() {
+                // CallId are 1-indexed. Create the pickup call.
+                let call = CallId::new_pickup((i + 1) as i16).expect("CallId should be nonzero");
+                dummy_calls.push(call.raw());
+                dummy_calls.push(call.raw());
+            }
+        }
+
+        // Sort dummy for readability
+        dummy_calls.sort();
+
+        flattened.extend(dummy_calls);
+
+        format!(
+            "[{}]",
+            flattened
+                .iter()
+                .map(|x| x.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    }
+
+    pub fn verify_ordering(&self) -> Result<(), String> {
+        for (veh_idx, route) in self.routes.iter().enumerate() {
+            // Get the compact list of calls from the route.
+            let calls = route.route();
+            let mut occurrences: HashMap<i16, Vec<usize>> = HashMap::new();
+
+            // Record all positions for each call (using the absolute call id).
+            for (i, call) in calls.iter().enumerate() {
+                occurrences.entry(call.id()).or_default().push(i);
+            }
+
+            // Now check that each call appears exactly twice and in the correct order.
+            for (call_abs, indices) in occurrences.iter() {
+                if indices.len() != 2 {
+                    return Err(format!(
+                        "Vehicle {}: Call {} appears {} times (expected 2)",
+                        veh_idx + 1,
+                        call_abs,
+                        indices.len()
+                    ));
+                }
+                let first_call = calls[*indices.first().unwrap()];
+                let second_call = calls[*indices.last().unwrap()];
+                if !first_call.is_pickup() {
+                    return Err(format!(
+                        "Vehicle {}: Call {}'s first occurrence (index {}) is not a pickup",
+                        veh_idx + 1,
+                        call_abs,
+                        indices.first().unwrap()
+                    ));
+                }
+                if !second_call.is_delivery() {
+                    return Err(format!(
+                        "Vehicle {}: Call {}'s second occurrence (index {}) is not a delivery",
+                        veh_idx + 1,
+                        call_abs,
+                        indices.last().unwrap()
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
 
     /// Inserts a call into a vehicle’s route at the specified delivery index.
     pub fn insert_call(
@@ -132,22 +254,21 @@ impl Solution {
         pickup_idx: usize,
         delivery_idx: usize,
     ) -> Result<(), SolutionError> {
-        if delivery_idx <= pickup_idx {
+        if delivery_idx < pickup_idx {
             return Err(SolutionError::InvalidDeliveryIndex(format!(
-                "Delivery index {} must be greater than the pickup index {}",
+                "Delivery index {} must be greater than or equal to the pickup index {}",
                 delivery_idx, pickup_idx
             )));
         }
 
         // If already assigned, remove from its current vehicle.
-        if matches!(self.assignments[call.index()], Some(_)) {
+        if self.assignments[call.index()].is_some() {
             self.remove_call(call)?;
         }
 
-        let route = self
-            .routes
-            .get_mut(vehicle.get() as usize - 1)
-            .ok_or_else(|| SolutionError::VehicleOutOfBounds(format!("Vehicle {} not found", vehicle)))?;
+        let route = self.routes.get_mut(vehicle.index()).ok_or_else(|| {
+            SolutionError::VehicleOutOfBounds(format!("Vehicle {:?} not found", vehicle))
+        })?;
 
         route.insert(call, pickup_idx, delivery_idx);
 
@@ -160,13 +281,13 @@ impl Solution {
     pub fn remove_call(&mut self, call: CallId) -> Result<(), SolutionError> {
         let vehicle_ref = &mut self.assignments[call.index()];
 
-        let vehicle = vehicle_ref.ok_or_else(||
-            SolutionError::CallNotFound(format!("Call {} is not assigned a vehicle", call.raw())))?;
+        let vehicle = vehicle_ref.ok_or_else(|| {
+            SolutionError::CallNotFound(format!("Call {} is not assigned a vehicle", call.raw()))
+        })?;
 
-        let route = self
-            .routes
-            .get_mut(vehicle.get() as usize - 1)
-            .ok_or_else(|| SolutionError::VehicleOutOfBounds(format!("Vehicle {} not found", vehicle)))?;
+        let route = self.routes.get_mut(vehicle.index()).ok_or_else(|| {
+            SolutionError::VehicleOutOfBounds(format!("Vehicle {:?} not found", vehicle))
+        })?;
 
         route.remove(call);
 
@@ -180,7 +301,7 @@ impl Solution {
             return Vec::new();
         }
 
-        self.routes[vehicle.get() as usize - 1].route()
+        self.routes[vehicle.index()].route()
     }
 
     /// Checks whether the specified call is unassigned.
@@ -191,6 +312,42 @@ impl Solution {
     /// Provides an iterator over the assignments vector.
     pub fn assignments(&self) -> impl Iterator<Item = &Option<VehicleId>> {
         self.assignments.iter()
+    }
+
+    /// Returns a slice of routes (for use by operators).
+    pub fn routes(&self) -> &[Route] {
+        &self.routes
+    }
+
+    pub fn call_assignments(&self) -> &[Option<VehicleId>] {
+        &self.assignments
+    }
+
+    pub fn find_spare_capacity_in_vehicle(
+        &mut self,
+        problem: &Problem,
+        call: CallId,
+        vehicle: VehicleId,
+    ) -> (CargoSize, &Option<CapacityResult>) {
+        let call_weight = problem.cargo_size(call);
+
+        (
+            call_weight,
+            self.routes[vehicle.index()].find_spare_capacity(problem, call_weight, vehicle),
+        )
+    }
+
+    /// Returns an iterator of feasible insertion points (pickup_idx, delivery_idx) for a call
+    pub fn get_feasible_insertions<'a>(
+        &'a self,
+        problem: &'a Problem,
+        call: CallId,
+        vehicle: VehicleId,
+        capacity_result: &'a Option<CapacityResult>,
+    ) -> impl Iterator<Item = (usize, usize)> + 'a {
+        FeasibleInsertions::new(problem, self, vehicle, call, capacity_result)
+            .into_iter()
+            .flatten()
     }
 
     /// Checks whether the solution is feasible with respect to the given problem.
@@ -204,19 +361,79 @@ impl Solution {
     ///   - The time window for the call is respected.
     ///   - The appropriate service (loading/unloading) time is added.
     ///   - If there is a next call, the travel time from the current node to the next call’s node is added.
-    pub fn is_feasible(&self, problem: &Problem) -> bool {
-        for (i, route) in self.routes.iter().enumerate() {
-            let vehicle_id = VehicleId::new((i + 1) as u8)
-                .expect("VehicleId must be nonzero");
-            let sim = route.simulate(problem, vehicle_id);
-            if !sim.is_feasible {
-                return false;
+    pub fn feasible(&mut self, problem: &Problem) -> Result<(), SolutionError> {
+        for (i, route) in self.routes.iter_mut().enumerate() {
+            let vehicle_id = VehicleId::new((i + 1) as u8).expect("VehicleId must be nonzero");
+
+            // Check if we already have a simulation result
+            if let Some(sim) = route.last_simulation() {
+                if !sim.is_feasible {
+                    // If we have a simulation result and it's infeasible, return error
+                    return Err(SolutionError::InvalidInput(format!(
+                        "Vehicle {} is infeasible at {}: {:?}",
+                        vehicle_id.get(),
+                        sim.infeasible_at.unwrap(),
+                        sim.error.clone().unwrap_or("No error message".to_string())
+                    )));
+                }
+                // If simulation exists and is feasible, continue to next route
+                continue;
+            }
+
+            // No simulation result yet, so run simulate
+            if !route.simulate(problem, vehicle_id, Some(self.costs.as_mut())) {
+                let sim = route.last_simulation().unwrap();
+                return Err(SolutionError::InvalidInput(format!(
+                    "Vehicle {} is infeasible at {}: {:?}",
+                    vehicle_id.get(),
+                    sim.infeasible_at.unwrap(),
+                    sim.error.clone().unwrap_or("No error message".to_string())
+                )));
             }
         }
-        true
+        Ok(())
     }
 
-    pub fn cost(&self, _problem: &Problem) -> u32 {
-        unimplemented!("Cost calculation not implemented yet.")
+    /// Computes the total cost of the solution.
+    /// For each route (vehicle), the cost is the sum of its route cost and port cost as computed by simulate().
+    pub fn cost(&mut self, problem: &Problem) -> Cost {
+        let mut total_cost: i32 = 0;
+
+        // For each vehicle/route
+        for (i, route) in self.routes.iter_mut().enumerate() {
+            let vehicle_id = VehicleId::new((i + 1) as u8).expect("VehicleId must be nonzero");
+
+            // Check if we already have a simulation result
+            if let Some(sim) = route.last_simulation() {
+                if sim.is_feasible {
+                    // If we have a feasible simulation result, use its cost values
+                    total_cost += sim.route_cost + sim.port_cost;
+                    continue;
+                }
+                // If simulation exists but is infeasible, re-simulate (fallthrough)
+            }
+
+            // No simulation result yet or existing simulation is infeasible, so run simulate
+            if route.simulate(problem, vehicle_id, Some(self.costs.as_mut())) {
+                let sim = route.last_simulation().unwrap();
+                total_cost += sim.route_cost + sim.port_cost;
+            }
+        }
+
+        // Dummy cost: for each call that is unassigned (assignment is None),
+        // add its not_transport_cost.
+        let dummy_cost: i32 = self
+            .assignments
+            .iter()
+            .enumerate()
+            .filter(|(_, assignment)| assignment.is_none())
+            .map(|(i, _)| {
+                let call = CallId::new_pickup((i + 1).try_into().unwrap())
+                    .expect("CallId should be nonzero");
+                problem.not_transport_cost(call) as i32
+            })
+            .sum();
+
+        total_cost + dummy_cost
     }
 }
