@@ -16,7 +16,7 @@ pub fn local_search(
 
     for _ in 0..max_iter {
         current_solution = best_solution.clone();
-        current_solution = mutate(current_solution, problem);
+        mutate(&mut current_solution, problem);
 
         if current_solution.feasible(problem).is_err() {
             _infeasible_count += 1;

@@ -98,27 +98,37 @@ impl Route {
     }
 
     /// Removes the given call from the route.
-    pub(super) fn remove(&mut self, call_id: CallId) {
-        let mut count = 0;
+    pub(super) fn remove(&mut self, call_id: CallId) -> (Option<usize>, Option<usize>) {
+        let mut index = 0;
+        
+        let (mut pickup_index, mut delivery_index) = (None, None);
 
         for call in self.calls.iter_mut() {
             match call {
-                Some(route) => {
-                    if call_id.id() == route.id() {
+                Some(route) if call_id.id() == route.id() => {
+                    if pickup_index.is_none() {
+                        pickup_index = Some(index);
                         *call = None;
-                        count += 1;
-                    }
+                    } else if delivery_index.is_none() {
+                        delivery_index = Some(index);
+                        *call = None;
 
-                    // If presumably both pickup and delivery got removed, return
-                    if count == 2 {
+                        // If presumably both pickup and delivery got removed, return
                         break;
                     }
                 }
-                None => continue,
+                Some(_) | None => {}
+            }
+            
+            // Only count non-None (logical) indices.
+            if call.is_some() {
+                index += 1;
             }
         }
-        self.length -= count;
+        self.length -= (pickup_index.is_some() as usize) + (delivery_index.is_some() as usize);
         self.simulation = None;
+        
+        (pickup_index, delivery_index)
     }
 
     /// Simulates the route schedule for the given vehicle.

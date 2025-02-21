@@ -277,8 +277,8 @@ impl Solution {
         Ok(())
     }
 
-    /// Removes a call from the specified vehicle’s route.
-    pub fn remove_call(&mut self, call: CallId) -> Result<(), SolutionError> {
+    /// Removes a call from its vehicle’s route.
+    pub fn remove_call(&mut self, call: CallId) -> Result<(VehicleId, Option<usize>, Option<usize>), SolutionError> {
         let vehicle_ref = &mut self.assignments[call.index()];
 
         let vehicle = vehicle_ref.ok_or_else(|| {
@@ -289,11 +289,16 @@ impl Solution {
             SolutionError::VehicleOutOfBounds(format!("Vehicle {:?} not found", vehicle))
         })?;
 
-        route.remove(call);
+        let (removed_pickup, removed_delivery) = route.remove(call);
 
         // Reset the assignment.
         *vehicle_ref = None;
-        Ok(())
+        
+        debug_assert!(removed_pickup.is_some() || removed_delivery.is_some(),
+                      "Call {:?} is missing pickup/delivery in route {:?}: {:?}/{:?}", 
+                      call, vehicle.index(), removed_pickup, removed_delivery);
+        
+        Ok((vehicle, removed_pickup, removed_delivery))
     }
 
     pub fn route(&self, vehicle: VehicleId) -> Vec<CallId> {
@@ -430,7 +435,7 @@ impl Solution {
             .map(|(i, _)| {
                 let call = CallId::new_pickup((i + 1).try_into().unwrap())
                     .expect("CallId should be nonzero");
-                problem.not_transport_cost(call) as i32
+                problem.not_transport_cost(call)
             })
             .sum();
 
