@@ -6,7 +6,7 @@ use crate::utils::Matrix2;
 #[derive(Default)]
 pub(super) struct ProblemIndex {
     /// For each call, the list of compatible vehicles
-    pub cargo_vessel: Vec<Vec<VehicleId>>,
+    pub(super) cargo_vessel: Vec<Vec<VehicleId>>,
 }
 
 impl ProblemIndex {

@@ -1,9 +1,11 @@
 [package]
 name = "drones2"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [dependencies]
-bytemuck = "1.21.0"
+bytemuck = "1.22"
 rand = "0.9"
-rand_pcg = "0.3"
+rand_xoshiro = "0.7"
+arrow = "54.2"
+parquet = "54.2"

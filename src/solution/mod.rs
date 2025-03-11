@@ -2,7 +2,7 @@ mod route;
 mod solution;
 
 pub(crate) use route::Route;
-pub(crate) use solution::Solution;
+pub use solution::Solution;
 
 mod compact;
 mod feasibility;

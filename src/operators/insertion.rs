@@ -11,7 +11,6 @@ pub fn random_placement(solution: &mut Solution, problem: &Problem, calls: Vec<C
     let (mut evaluated, mut infeasible) = (0, 0);
 
     let first_call = *calls.first().unwrap();
-    let mut inserted = false;
 
     let inserted = 'placement: {
         for call in calls {

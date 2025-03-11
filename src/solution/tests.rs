@@ -1,5 +1,5 @@
-use super::solution::*; // Import everything from solution.rs
-use crate::types::*; // Import types (VehicleId, CallId, etc.)
+use super::solution::*;
+use crate::types::*;
 
 #[cfg(test)]
 mod solution_tests {

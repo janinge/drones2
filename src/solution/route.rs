@@ -157,7 +157,7 @@ impl Route {
         // For vehicle lookup; vehicles are stored in order so that route at index i
         // corresponds to vehicle with id = (i+1).
         let veh_idx = vehicle.index();
-        let veh = &problem.vehicles[veh_idx];
+        let veh = &problem.vehicles()[veh_idx];
         let max_capacity = veh.capacity;
 
         // Start at the depot node.
@@ -381,7 +381,7 @@ impl Route {
         let vehicle_capacity = problem.get_vehicle(vehicle).capacity;
         
         // Initialize our result vector
-        let mut capacity_indices = Vec::new();
+        let mut capacity_indices = Vec::with_capacity(sim.loads.len() + 1);
         
         // Always check capacity at index 0 (before any pickup)
         if vehicle_capacity >= call_weight as Capacity {
@@ -410,7 +410,7 @@ impl Route {
         }
         
         // Find continuous ranges from the indices
-        let mut continuous_ranges = Vec::new();
+        let mut continuous_ranges = Vec::with_capacity(capacity_indices.len());
         
         if !capacity_indices.is_empty() {
             let mut start = capacity_indices[0];

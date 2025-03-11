@@ -1,13 +1,16 @@
+use rand::SeedableRng;
 use crate::problem::Problem;
 use crate::solution::feasibility::FeasibleInsertions;
 use crate::solution::route::CapacityResult;
 use crate::solution::Route;
 use crate::types::*;
 use std::collections::{HashMap, HashSet};
-use std::ops::Range;
+use std::hash::{Hash, Hasher};
+use rand_xoshiro::rand_core::RngCore;
+use rand_xoshiro::SplitMix64;
 
 #[derive(Debug)]
-pub(crate) enum SolutionError {
+pub enum SolutionError {
     InvalidPickupIndex(String),
     InvalidDeliveryIndex(String),
     CallNotFound(String),
@@ -15,8 +18,8 @@ pub(crate) enum SolutionError {
     InvalidInput(String),
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct Solution {
+#[derive(Clone, Debug)]
+pub struct Solution {
     routes: Vec<Route>,
     assignments: Vec<Option<VehicleId>>,
     costs: Vec<CallCost>
@@ -30,10 +33,10 @@ pub(super) struct CallCost {
 }
 
 impl Solution {
-    pub(crate) fn new(problem: &Problem) -> Self {
+    pub fn new(problem: &Problem) -> Self {
         Self::from_params(
-            problem.n_vehicles.get() as usize,
-            problem.n_calls.id() as usize,
+            problem.n_vehicles().get() as usize,
+            problem.n_calls().id() as usize,
         )
     }
 
@@ -440,5 +443,20 @@ impl Solution {
             .sum();
 
         total_cost + dummy_cost
+    }
+}
+
+impl Hash for Solution {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        let mut hasher_rng = SplitMix64::seed_from_u64(self.routes.len() as u64);
+
+        for &vehicle in &self.assignments {
+            let random_val = hasher_rng.next_u64();
+            let hashed_value = match vehicle {
+                Some(nonzero) => random_val ^ (nonzero.get() as u64),
+                None => random_val,
+            };
+            state.write_u64(hashed_value);
+        }
     }
 }

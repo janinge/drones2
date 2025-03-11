@@ -42,30 +42,30 @@ pub enum Cargo {
 /// The main problem data structure.
 pub struct Problem {
     /// Number of nodes (always 39).
-    pub n_nodes: NodeId,
+    pub(super) n_nodes: NodeId,
     /// Number of vehicles.
-    pub n_vehicles: VehicleId,
+    pub(super) n_vehicles: VehicleId,
     /// Number of calls.
-    pub n_calls: CallId,
+    pub(super) n_calls: CallId,
     /// Vehicle-specific data.
-    pub vehicles: Vec<Vehicle>,
+    pub(super) vehicles: Vec<Vehicle>,
     /// Call-specific data.
-    pub calls: Vec<CallParameters>,
+    pub(super) calls: Vec<CallParameters>,
     /// For each vehicle, the travel time between every pair of nodes.
     /// Indexed as [vehicle][origin][destination].
-    pub travel_time: Matrix3<Time>,
+    pub(super) travel_time: Matrix3<Time>,
     /// For each vehicle, the travel cost between every pair of nodes.
-    pub travel_cost: Matrix3<Cost>,
+    pub(super) travel_cost: Matrix3<Cost>,
     /// For each vehicle, a boolean mask over calls (true if the call is allowed).
-    pub vessel_cargo: Matrix2<bool>,
+    pub(super) vessel_cargo: Matrix2<bool>,
     /// For each vehicle and call, the loading time.
-    pub loading_time: Matrix2<Time>,
+    pub(super) loading_time: Matrix2<Time>,
     /// For each vehicle and call, the unloading time.
-    pub unloading_time: Matrix2<Time>,
+    pub(super) unloading_time: Matrix2<Time>,
     /// For each vehicle and call, the port cost (origin cost + destination cost).
-    pub port_cost: Matrix2<Cost>,
+    pub(super) port_cost: Matrix2<Cost>,
     /// Precomputed data structures.
-    pub index: ProblemIndex,
+    pub(super) index: ProblemIndex,
 }
 
 impl Problem {
@@ -77,7 +77,7 @@ impl Problem {
             .lines()
             .map(|l| l.map_err(|e| e.to_string()))
             .filter(|line| {
-                if let Ok(ref s) = line {
+                if let Ok(s) = line {
                     let trimmed = s.trim();
                     !trimmed.is_empty()
                         && trimmed
@@ -557,5 +557,17 @@ impl Problem {
             self.destination_node(destination)
         };
         self.get_travel_cost(vehicle, origin_node, destination_node)
+    }
+
+    pub fn vehicles(&self) -> &Vec<Vehicle> {
+        &self.vehicles
+    }
+
+    pub fn n_calls(&self) -> CallId {
+        self.n_calls
+    }
+
+    pub fn n_vehicles(&self) -> VehicleId {
+        self.n_vehicles
     }
 }

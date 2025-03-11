@@ -47,17 +47,15 @@ impl<T: Pod> Hash for Matrix2<T> {
 /// A simple 3D matrix that wraps a flat Vec.
 #[derive(Debug, Clone)]
 pub struct Matrix3<T> {
-    pub data: Vec<T>,
-    pub dim1: usize,
-    pub dim2: usize,
-    pub dim3: usize,
+    data: Vec<T>,
+    dim2: usize,
+    dim3: usize,
 }
 
 impl<T: Clone> Matrix3<T> {
     pub fn new(dim1: usize, dim2: usize, dim3: usize, init: T) -> Self {
         Self {
             data: vec![init; dim1 * dim2 * dim3],
-            dim1,
             dim2,
             dim3,
         }

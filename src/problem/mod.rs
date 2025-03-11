@@ -1,4 +1,4 @@
 mod index;
-pub mod problem;
+pub mod instance;
 
-pub use problem::Problem;
+pub use instance::Problem;
