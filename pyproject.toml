@@ -1,0 +1,12 @@
+[project]
+name = "drones2"
+version = "0.1.0"
+description = "It plots things."
+requires-python = ">=3.12"
+dependencies = [
+    "dash==3.0.0rc3",
+    "dash-bootstrap-components==2.0.0b2",
+    "pandas>=2.2.3",
+    "plotly>=6.0.0",
+    "pyarrow>=19.0.1",
+]

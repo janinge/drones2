@@ -1,7 +1,7 @@
 use rand::Rng;
 use std::time::Instant;
 
-use crate::operators::mutate::mutate;
+use crate::operators::mutate::roulette_wheel_tuned;
 use crate::problem::Problem;
 use crate::solution::Solution;
 use crate::types::Cost;
@@ -36,7 +36,7 @@ pub fn simulated_annealing(
     
         let mut candidate = incumbent.clone();
         
-        let (evaluations, infeasible) = mutate(&mut candidate, problem);
+        let (evaluations, infeasible) = roulette_wheel_tuned(&mut candidate, problem);
 
         let candidate_cost = candidate.cost(problem);
         let delta_e = candidate_cost - incumbent_cost;
@@ -94,7 +94,7 @@ pub fn simulated_annealing(
 
         let mut candidate = incumbent.clone();
         
-        let (evaluations, infeasible) = mutate(&mut candidate, problem);
+        let (evaluations, infeasible) = roulette_wheel_tuned(&mut candidate, problem);
 
         let candidate_cost = candidate.cost(problem);
         let delta_e = candidate_cost - incumbent_cost;

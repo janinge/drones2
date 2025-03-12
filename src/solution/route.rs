@@ -363,7 +363,7 @@ impl Route {
         min_slack
     }
 
-    pub(super) fn last_simulation(&self) -> Option<&SimulationResult> {
+    pub(crate) fn last_simulation(&self) -> Option<&SimulationResult> {
         self.simulation.as_ref()
     }
 
@@ -454,7 +454,7 @@ impl Route {
         &sim.capacity
     }
 
-    pub(super) fn route(&self) -> Vec<CallId> {
+    pub(crate) fn route(&self) -> Vec<CallId> {
         if self.is_compact() {
             self.calls.iter().map(|x| x.unwrap()).collect()
         } else {
@@ -468,7 +468,7 @@ impl Route {
     }
 
     /// Returns true if the route is empty.
-    pub(super) fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.length == 0
     }
 

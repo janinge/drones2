@@ -25,11 +25,11 @@ pub struct Solution {
     costs: Vec<CallCost>
 }
 
-#[derive(Default, Clone, Debug, PartialEq)]
-pub(super) struct CallCost {
-    pub(super) total: Cost,
-    pub(super) pickup: Cost,
-    pub(super) delivery: Cost,
+#[derive(Default, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct CallCost {
+    pub total: Cost,
+    pub pickup: Cost,
+    pub delivery: Cost,
 }
 
 impl Solution {
@@ -314,7 +314,7 @@ impl Solution {
 
     /// Checks whether the specified call is unassigned.
     pub fn is_unassigned(&self, call: CallId) -> bool {
-        self.assignments[call.index()] == None
+        self.assignments[call.index()].is_none()
     }
 
     /// Provides an iterator over the assignments vector.
@@ -323,12 +323,20 @@ impl Solution {
     }
 
     /// Returns a slice of routes (for use by operators).
-    pub fn routes(&self) -> &[Route] {
+    pub(crate) fn routes(&self) -> &[Route] {
         &self.routes
     }
 
     pub fn call_assignments(&self) -> &[Option<VehicleId>] {
         &self.assignments
+    }
+    
+    pub fn len(&self) -> usize {
+        self.assignments.len()
+    }
+    
+    pub fn is_empty(&self) -> bool {
+        self.routes.iter().all(|route| route.is_empty())
     }
 
     pub fn find_spare_capacity_in_vehicle(
@@ -443,6 +451,10 @@ impl Solution {
             .sum();
 
         total_cost + dummy_cost
+    }
+
+    pub fn call_costs(&self) -> &Vec<CallCost> {
+        &self.costs
     }
 }
 

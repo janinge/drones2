@@ -1,4 +1,5 @@
 use std::num::{NonZeroI16, NonZeroU8};
+use std::hash::{Hash, Hasher};
 
 pub type NodeId = u8;
 pub type Time = i16;
@@ -6,7 +7,7 @@ pub type Capacity = i32;
 pub type Cost = i32;
 pub type CargoSize = u16;
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug)]
 #[repr(transparent)]
 pub struct CallId(NonZeroI16);
 
@@ -84,6 +85,20 @@ impl TryFrom<usize> for CallId {
                 .map(CallId)
                 .ok_or("Failed to create CallId")
         }
+    }
+}
+
+impl PartialEq for CallId {
+    fn eq(&self, other: &Self) -> bool {
+        self.id() == other.id()
+    }
+}
+
+impl Eq for CallId {}
+
+impl Hash for CallId {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.id().hash(state);
     }
 }
 
