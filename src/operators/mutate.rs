@@ -9,15 +9,20 @@ use crate::problem::Problem;
 use crate::solution::Solution;
 use crate::types::CallId;
 
-const REMOVAL_OPERATORS: [fn(&Solution, &RemovalParams) -> Vec<CallId>; 3] = [
+pub const REMOVAL_OPERATORS: [fn(&Solution, &RemovalParams) -> Vec<CallId>; 3] = [
     combined_cost,
     broken_vehicle,
     global_waiting
 ];
 
+pub const INSERTION_OPERATORS: [fn(&mut Solution, &Problem, Vec<CallId>) -> (usize, usize); 2] = [
+    random_placement_one,
+    random_placement_all
+];
+
 const WEIGHTS: [f64; 3] = [0.3, 0.5, 0.2];
 
-const PARAMS: RemovalParams = RemovalParams {
+pub(crate) const PARAMS: RemovalParams = RemovalParams {
     selection_ratio: 0.5,
     randomness: 0.1,
     cost_bias: 0.5,

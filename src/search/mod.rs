@@ -1,3 +1,4 @@
 pub mod local;
 pub mod annealing;
-mod progress;
+pub mod progress;
+pub mod alns;

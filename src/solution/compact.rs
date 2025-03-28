@@ -64,3 +64,20 @@ impl<'a> Iterator for CompactIter<'a> {
         }
     }
 }
+
+/// Compacts a route's calls in-place by removing all None entries and shifting non-None values to the left.
+pub(crate) fn compact<T>(vec: &mut Vec<Option<T>>, length: usize) {
+    let mut next = 0;
+    for i in 0..vec.len() {
+        if vec[i].is_some() {
+            if i != next {
+                vec[next] = vec[i].take();
+            }
+            next += 1;
+            if next == length {
+                break;
+            }
+        }
+    }
+    vec.truncate(length);
+}

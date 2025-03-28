@@ -17,7 +17,7 @@ fn main() -> std::io::Result<()> {
         "Call_300_Vehicle_90.txt",
     ];
     
-    const MAX_ITERATIONS: usize = 1_000;
+    const MAX_ITERATIONS: usize = 10_000;
     const RUNS: usize = 10;
 
     for file in data {

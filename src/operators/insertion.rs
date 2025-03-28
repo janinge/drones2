@@ -1,11 +1,12 @@
 use rand::prelude::*;
+use rand::rng;
 use crate::problem::Problem;
 use crate::solution::Solution;
 use crate::types::{CallId, VehicleId};
 
 
 pub fn random_placement_one(solution: &mut Solution, problem: &Problem, calls: Vec<CallId>) -> (usize, usize) {
-    let mut rng = rand::thread_rng();
+    let mut thread_rng = rng();
     let (mut evaluated, mut infeasible) = (0, 0);
     let first_call = *calls.first().expect("At least one call must be provided");
 
@@ -17,7 +18,7 @@ pub fn random_placement_one(solution: &mut Solution, problem: &Problem, calls: V
             Err(_) => (None, None, None),
         };
 
-        if attempt_insert_call(solution, problem, call, removed, &mut rng, &mut evaluated, &mut infeasible) {
+        if attempt_insert_call(solution, problem, call, removed, &mut thread_rng, &mut evaluated, &mut infeasible) {
             inserted = true;
             break;
         } else {
@@ -46,7 +47,7 @@ pub fn random_placement_all(
     problem: &Problem,
     calls: Vec<CallId>,
 ) -> (usize, usize) {
-    let mut rng = rand::thread_rng();
+    let mut thread_rng = rng();
     let mut evaluated = 0;
     let mut infeasible = 0;
 
@@ -57,7 +58,7 @@ pub fn random_placement_all(
 
     // For each call, attempt to insert it into a random feasible position.
     for call in calls {
-        let _ = attempt_insert_call(solution, problem, call, (None, None, None), &mut rng, &mut evaluated, &mut infeasible);
+        let _ = attempt_insert_call(solution, problem, call, (None, None, None), &mut thread_rng, &mut evaluated, &mut infeasible);
     }
 
     (evaluated, infeasible)

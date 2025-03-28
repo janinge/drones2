@@ -20,6 +20,12 @@ pub struct SearchProgress {
     pub candidate_hash: u64,
 }
 
+impl Default for SearchProgress {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SearchProgress {
     pub fn new() -> Self {
         SearchProgress {

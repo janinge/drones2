@@ -1,8 +1,8 @@
 use crate::problem::Problem;
-use crate::solution::compact::CompactIter;
+use crate::solution::compact::{compact, CompactIter};
+use crate::solution::solution::CallCost;
 use crate::types::{CallId, Capacity, CargoSize, Cost, Time, VehicleId};
 use std::ops::RangeInclusive;
-use crate::solution::solution::CallCost;
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Route {
@@ -72,28 +72,62 @@ impl Route {
 
         self.length += 2;
         self.simulation = None;
+
+        if (self.length * 2) + 6 < self.calls.len() {
+            compact(&mut self.calls, self.length);
+        }
+    }
+
+    /// Converts a logical index (in the compact representation) to the real index (in the sparse representation).
+    fn logical_idx_to_real(&self, logical_pickup: usize, logical_delivery: usize, ) -> (usize, usize) {
+        if self.is_compact() {
+            return (logical_pickup, logical_delivery);
+        }
+
+        // If the logical index is zero, the candidate is 0.
+        let mut real_pickup_index = if logical_pickup == 0 { Some(0) } else { None };
+        let mut real_delivery_index = if logical_delivery == 0 { Some(0) } else { None };
+
+        let mut non_zero_count = 0;
+        // Single pass: update each candidate when the required count is reached.
+        for (real_index, val) in self.calls.iter().enumerate() {
+            if val.is_some() {
+                non_zero_count += 1;
+                if real_pickup_index.is_none() && non_zero_count == logical_pickup {
+                    // We want to insert after the (logical_pickup - 1)th Some.
+                    real_pickup_index = Some(real_index + 1);
+                }
+                if real_delivery_index.is_none() && non_zero_count == logical_delivery {
+                    real_delivery_index = Some(real_index + 1);
+                }
+                if real_pickup_index.is_some() && real_delivery_index.is_some() {
+                    break;
+                }
+            }
+        }
+
+        // Fallback: if the logical index wasn’t reached, default to appending.
+        let real_pickup = real_pickup_index.unwrap_or(self.calls.len());
+        let mut real_delivery = real_delivery_index.unwrap_or(self.calls.len());
+
+        if real_delivery + 1 < self.calls.len() &&
+            self.calls[real_delivery + 1].is_none() &&
+            self.calls[real_delivery].is_none() {
+            real_delivery += 1;
+        }
+
+        (real_pickup, real_delivery)
     }
 
     /// Inserts a call into the route at the given index.
     /// If the index is out of bounds, the call is appended to the end of the route.
     fn insert_single(&mut self, call: CallId, idx: usize) {
-        let prev_index = idx.saturating_sub(1);
-
-        match self.calls.get(prev_index) {
-            Some(None) => {
-                // Slot before index empty: simply fill this.
-                // TODO: Redo this logic. Equal real indexes gives pickup/delivery out of order.
-                //self.calls[prev_index] = Some(call);
-
-                // Same as bellow for now.
-                self.calls.insert(idx, Some(call));
-            }
-            Some(Some(_)) => {
-                self.calls.insert(idx, Some(call));
-            }
-            None => {
-                self.calls.push(Some(call));
-            }
+        if idx < self.calls.len() && self.calls[idx].is_none() {
+            self.calls[idx] = Some(call);
+        } else if idx <= self.calls.len() {
+            self.calls.insert(idx, Some(call));
+        } else {
+            self.calls.push(Some(call));
         }
     }
 
@@ -484,38 +518,5 @@ impl Route {
 
     fn update_len(&mut self) {
         self.length = self.calls.iter().filter(|&x| x.is_some()).count();
-    }
-
-    /// Converts a logical index (in the compact representation) to the real index (in the sparse representation).
-    fn logical_idx_to_real(
-        &self,
-        logical_pickup: usize,
-        logical_delivery: usize,
-    ) -> (usize, usize) {
-        if self.is_compact() {
-            return (logical_pickup, logical_delivery);
-        }
-
-        let mut real_pickup_index: Option<usize> = None;
-        let mut real_delivery_index: Option<usize> = None;
-        let mut non_zero_count = 0;
-
-        for (real_index, val) in self.calls.iter().enumerate() {
-            if val.is_some() {
-                if non_zero_count == logical_pickup {
-                    real_pickup_index = Some(real_index);
-                }
-                if non_zero_count == logical_delivery {
-                    real_delivery_index = Some(real_index);
-                    break; // Stop early once both indices are found
-                }
-                non_zero_count += 1;
-            }
-        }
-
-        let real_pickup = real_pickup_index.unwrap_or(self.calls.len()); // If not found, insert at the end
-        let real_delivery = real_delivery_index.unwrap_or(self.calls.len()); // If not found, insert at the end
-
-        (real_pickup, real_delivery)
     }
 }

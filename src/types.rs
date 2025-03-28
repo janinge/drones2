@@ -1,5 +1,8 @@
 use std::num::{NonZeroI16, NonZeroU8};
 use std::hash::{Hash, Hasher};
+use crate::operators::params::RemovalParams;
+use crate::problem::Problem;
+use crate::solution::Solution;
 
 pub type NodeId = u8;
 pub type Time = i16;
@@ -14,6 +17,10 @@ pub struct CallId(NonZeroI16);
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct VehicleId(NonZeroU8);
+
+pub type RemovalOperator = fn(&Solution, &RemovalParams) -> Vec<CallId>;
+pub type InsertionOperator = fn(&mut Solution, &Problem, Vec<CallId>) -> (usize, usize);
+pub type OperatorPair = (RemovalOperator, InsertionOperator);
 
 impl CallId {
     /// Creates a new CallId from a raw i16.
