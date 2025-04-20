@@ -402,6 +402,18 @@ impl Problem {
         let veh = &self.vehicles[vehicle.index()];
         self.get_travel_cost(vehicle, veh.home_node, destination)
     }
+    
+    pub fn get_vehicle_start_time(&self, vehicle: VehicleId) -> Time {
+        self.vehicles[vehicle.index()].starting_time
+    }
+
+    pub fn get_vehicle_capacity(&self, vehicle: VehicleId) -> Capacity {
+        self.vehicles[vehicle.index()].capacity
+    }
+    
+    pub fn get_vehicle_home_node(&self, vehicle: VehicleId) -> NodeId {
+        self.vehicles[vehicle.index()].home_node
+    }
 
     /// Returns the appropriate time window for a call.
     /// A positive call indicates a pickup; a negative call a delivery.
@@ -569,5 +581,22 @@ impl Problem {
 
     pub fn n_vehicles(&self) -> VehicleId {
         self.n_vehicles
+    }
+
+    /// Returns an iterator over all pickup CallIds.
+    pub fn all_calls(&self) -> impl Iterator<Item=CallId> {
+        (1..=self.n_calls.id()).map(|i| CallId::new_pickup(i).unwrap())
+    }
+
+    /// Returns a reference to the pickup interval tree.
+    #[inline(always)]
+    pub fn pickup_tree(&self) -> &IntervalTree {
+        &self.index.pickup_tree
+    }
+
+    /// Returns a reference to the delivery interval tree.
+    #[inline(always)]
+    pub fn delivery_tree(&self) -> &IntervalTree {
+        &self.index.delivery_tree
     }
 }

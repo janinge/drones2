@@ -52,13 +52,67 @@ impl Solution {
         }
     }
 
+    pub fn from_vehicle_routes(problem: &Problem, vehicle_routes: Vec<Vec<CallId>>) -> Result<Self, SolutionError> {
+        let n_vehicles = problem.n_vehicles().get() as usize;
+        let n_calls = problem.n_calls().id() as usize;
+
+        let mut solution = Solution::from_params(n_vehicles, n_calls);
+
+        // Process each vehicle's route
+        for (veh_index, route_calls) in vehicle_routes.iter().enumerate() {
+            // Skip if this vehicle's index is out of bounds
+            if veh_index >= n_vehicles {
+                continue;
+            }
+
+            let vehicle_id = VehicleId::from_index(veh_index).ok_or_else(|| {
+                SolutionError::VehicleOutOfBounds(format!("Vehicle index {} out of bounds", veh_index))
+            })?;
+
+            let mut route = Route::with_capacity(route_calls.len());
+            for &call in route_calls {
+                route.push(call);
+
+                // If this is a pickup call, record the assignment in the assignments vector
+                if call.is_pickup() {
+                    solution.assignments[call.index()] = Some(vehicle_id);
+                } else {
+                    #[cfg(debug_assertions)]
+                    {
+                        // If this is a delivery call, check if the corresponding pickup call is already assigned correctly
+                        let pickup_vehicle = solution.assignments[call.index()];
+                        if pickup_vehicle.is_none() {
+                            return Err(SolutionError::InvalidInput(format!(
+                                "Delivery call {} has no corresponding pickup assignment",
+                                call.id()
+                            )));
+                        } else if pickup_vehicle != Some(vehicle_id) {
+                            return Err(SolutionError::InvalidInput(format!(
+                                "Delivery call {} is assigned to vehicle {:?}, but pickup call is assigned to vehicle {:?}",
+                                call.id(),
+                                vehicle_id,
+                                pickup_vehicle
+                            )));
+                        }
+                    }
+                }
+            }
+
+            solution.routes[veh_index] = route;
+        }
+
+        solution.costs = vec![CallCost::default(); n_calls];
+
+        Ok(solution)
+    }
+
     /// Creates a new solution from a Python-like list string.
     ///
     /// In the input string:
     /// - Nonzero integers represent call IDs.
     /// - Each call appears twice: the first occurrence is its pickup, the second its delivery.
     /// - A 0 signals a new vehicle.
-    pub fn from_pylist(pylist: &str) -> Result<Solution, SolutionError> {
+    pub fn from_pylist(pylist: &str) -> Result<Self, SolutionError> {
         let trimmed = pylist.trim().trim_start_matches('[').trim_end_matches(']');
         let parsed: Result<Vec<i32>, _> = trimmed
             .split(',')

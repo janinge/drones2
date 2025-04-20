@@ -4,6 +4,7 @@ use std::ops::RangeInclusive;
 
 use crate::types::{CallId, Time};
 
+#[derive(Default)]
 pub struct IntervalTree {
     index_by_start: BTreeMap<Time, Vec<(Time, CallId)>>,
     index_by_end: BTreeMap<Time, Vec<(Time, CallId)>>,
@@ -64,8 +65,6 @@ impl IntervalTree {
         result
     }
 
-    // --- Active queries (the call is “active” if start ≤ current_time ≤ end) ---
-
     /// Active query using the start-time index.
     /// Returns all call IDs whose interval has started (key ≤ current_time)
     /// and not yet expired (current_time ≤ stored end).
@@ -103,8 +102,6 @@ impl IntervalTree {
         self.query(current_time, false)
     }
 
-    // --- Non-active queries (simply enumerate based on start or end times) ---
-
     /// Returns all call IDs with a start time ≤ the given query time.
     pub fn query_start_before(&self, query_time: Time) -> Vec<CallId> {
         self.collect_from_map(
@@ -139,5 +136,27 @@ impl IntervalTree {
             query_time..,
             None::<fn(&(Time, CallId)) -> bool>,
         )
+    }
+
+    /// Returns an iterator over all (time, call) with `start_time ≥ from` in ascending order.
+    pub fn start_events_from(&self, from: Time)
+                             -> impl Iterator<Item = (Time, CallId)> + '_
+    {
+        self.index_by_start
+            .range(from..)
+            .flat_map(|(&t_start, vec)| {
+                vec.iter().map(move |&(_end, call)| (t_start, call))
+            })
+    }
+
+    /// Same for end‐times ≥ from
+    pub fn end_events_from(&self, from: Time)
+                           -> impl Iterator<Item = (Time, CallId)> + '_
+    {
+        self.index_by_end
+            .range(from..)
+            .flat_map(|(&t_end, vec)| {
+                vec.iter().map(move |&(_start, call)| (t_end, call))
+            })
     }
 }
