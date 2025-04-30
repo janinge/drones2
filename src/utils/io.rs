@@ -17,17 +17,38 @@ pub struct Args {
     #[arg(short, long, default_value_t = 1)]
     pub runs: u32,
 
-    /// Maximum running time in seconds
+    /// Maximum running time in seconds per instance run
     #[arg(short, long)]
     pub time_limit: Option<u32>,
 
-    /// Temperature at start
-    #[arg(short, long)]
+    /// Temperature at start (T0)
+    #[arg(long)]
     pub t0: Option<f32>,
 
-    /// Temperature at end
-    #[arg(short, long, default_value_t = 10.0)]
+    /// Temperature at end (T_final)
+    #[arg(long, default_value_t = 10.0)]
     pub t_final: f32,
+
+    // Removal Operator Parameters
+    /// Ratio of calls to select for removal
+    #[arg(long, default_value_t = 0.95)]
+    pub removal_selection_ratio: f32,
+
+    /// Bias towards assignments with more calls (0.0 to 1.0)
+    #[arg(long, default_value_t = 0.90)]
+    pub removal_assignment_bias: f32,
+
+    /// Minimum number of calls to remove
+    #[arg(long, default_value_t = 1)]
+    pub removal_min_removals: usize,
+
+    /// Maximum number of calls to remove
+    #[arg(long, default_value_t = 5)]
+    pub removal_max_removals: usize,
+    
+    /// Optional delay in seconds to print the current best solution after it improved
+    #[arg(long)]
+    pub print_best_delay: Option<u32>,
 }
 
 pub fn enumerate_input_files(args: &Args) -> io::Result<Vec<std::path::PathBuf>> {

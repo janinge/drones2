@@ -1,3 +1,4 @@
+#[derive(Clone, Copy)]
 pub struct RemovalParams {
     pub selection_ratio: f32,  // Fraction of total calls to remove
     pub randomness: f32,       // Degree of randomness in selection

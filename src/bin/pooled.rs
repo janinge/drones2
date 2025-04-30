@@ -1,10 +1,12 @@
 use std::io::{self, Write};
 use std::time::Instant;
 use drones2::operators::{INSERTION_OPERATORS, REMOVAL_OPERATORS};
+use drones2::operators::params::RemovalParams; // Import RemovalParams
 use drones2::problem::Problem;
 use drones2::search::pooled::Pooled;
 use drones2::search::warmup::Warmup;
 use drones2::solution::Solution;
+use drones2::types::Cost;
 use drones2::utils::{Args, Parser, enumerate_input_files};
 
 fn main() -> io::Result<()> {
@@ -20,6 +22,16 @@ fn main() -> io::Result<()> {
             INSERTION_OPERATORS.iter().map(move |&insertion| (removal, insertion))
         })
         .collect();
+
+    let removal_params = RemovalParams {
+        selection_ratio: args.removal_selection_ratio,
+        randomness: 0.0,
+        cost_bias: 0.0,
+        assignment_bias: args.removal_assignment_bias,
+        min_removals: args.removal_min_removals,
+        max_removals: args.removal_max_removals,
+    };
+
 
     for path in instance_files {
         let instance_path = match path.to_str() {
@@ -57,6 +69,8 @@ fn main() -> io::Result<()> {
             let mut current_best_sol = initial.clone();
             let mut current_best_cost = initial_cost;
 
+            let mut printed_cost: Option<(Cost, Instant)> = None;
+
             let t0 = args.t0.unwrap_or_else(|| {
                 let warmup = Warmup::new(&operator_combinations);
                 warmup.run(&problem, current_best_sol.clone(), 100, 0.8)
@@ -68,7 +82,7 @@ fn main() -> io::Result<()> {
 
             let mut iterations_per_sec = 1_000;
 
-            let mut search = Pooled::new(&operator_combinations);
+            let mut search = Pooled::new(&operator_combinations, removal_params);
 
             let start_time = Instant::now();
             let mut iteration_end_time = start_time;
@@ -97,8 +111,21 @@ fn main() -> io::Result<()> {
                     iterations_per_sec = (iterations_per_sec as f64 * 0.5 + (iterations_per_sec as f64 * 1.0 / iteration_duration) * 0.5) as usize;
                 }
 
-                print!("\rRun: {}/{} \tElapsed time: {}/{} seconds. Speed: {}/{:.4} iter/sec. Temperature: {:.4}      ",
-                         run, runs, elapsed_time, time_limit, iterations_per_sec, iteration_duration, temp);
+                if let Some(delay) = args.print_best_delay {
+                    if let Some((last_cost, last_instant)) = printed_cost {
+                        if current_best_cost < last_cost && clock.duration_since(last_instant).as_secs() > delay as u64 {
+                            println!("\rBest after {:.2} seconds ({:?}): {:?}                                ",
+                                     clock.duration_since(last_instant).as_secs_f64() - delay as f64, current_best_cost, current_best_sol.to_pylist(true));
+
+                            printed_cost = Some((current_best_cost, clock))
+                        }
+                    } else {
+                        printed_cost = Some((i32::MAX, clock))
+                    }
+                }
+
+                print!("\rRun: {}/{}. Elapsed time: {}/{} seconds. Speed: {}/{:.4} iter/sec. Temperature: {:.4}. Best cost: {:?}.                                ",
+                         run, runs, elapsed_time, time_limit, iterations_per_sec, iteration_duration, temp, best_cost);
                 io::stdout().flush()?;
 
                 iteration_end_time = clock;
